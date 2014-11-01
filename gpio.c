@@ -38,6 +38,19 @@ void GPIO_SetAllAnalogInput(void){
 
 
 /*
+ * Configure the Discovery LEDs on PC08 and PC09
+*/
+void GPIO_ConfigDiscoveryLEDs(void) {
+	GPIO_InitTypeDef 	GPIO_InitStruct;
+	  /* Enable GPIOs clock */
+	RCC_APB2PeriphClockCmd(LED_CLK, ENABLE);
+	GPIO_InitStruct.GPIO_Speed = GPIO_Speed_2MHz;
+	GPIO_InitStruct.GPIO_Pin = LED_BLUE_PIN | LED_GREEN_PIN;
+	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_Init(LED_PORT, &GPIO_InitStruct);
+}
+
+/*
  * Configure the GPIO pins connected to the keypad. The mode parameter decides if the rows will be pullup inputs and columns as
  * outputs or vice versa.
  * The output pins are reset all to low.

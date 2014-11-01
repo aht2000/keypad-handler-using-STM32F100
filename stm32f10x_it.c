@@ -87,24 +87,7 @@ void EXTI15_10_IRQHandler(void)
 	}
 
 	DisableKeypadExti_IRQ();							// Disable interrupt to avoid any debounce effects
-
-	if (GPIO_ReadInputDataBit(KEYPAD_PORT, keypadPin)) {
-		if (keypadColState[keypadColIndex] == BT_DOWN) {// We read a high bit, so if it was low before then valid
-			keypadColState[keypadColIndex] = BT_GOING_UP;
-			enableDebounceTimer();						// Trigger a debounce delay, and read the key later in the timer ISR
-		} else {										// Invalid transition, enable interrupt back and return
-			EnableKeypadExti_IRQ();
-			keypadColState[keypadColIndex] = BT_IDLE;	// Reset button state to default
-		}
-	} else {											// We read a low bit, so see which valid transition we can handle
-		if (keypadColState[keypadColIndex] == BT_IDLE) {// button just pressed down from idle state
-			keypadColState[keypadColIndex] = BT_GOING_DOWN;
-			enableDebounceTimer();
-		} else {										// Invalid transition, enable interrupt back and return
-			EnableKeypadExti_IRQ();
-			keypadColState[keypadColIndex] = BT_IDLE;	// Reset button state to default
-		}
-	}
+	enableDebounceTimer();
 }
 
 
@@ -126,32 +109,22 @@ void TIM4_IRQHandler(void)
 
 	  disableDebounceTimer();
 	  if (GPIO_ReadInputDataBit(KEYPAD_PORT, keypadPin)) {
-		  	  	  	  	  	  	  	  	  	  	  	  	// We read a high bit
-	  		if (keypadColState[keypadColIndex] == BT_GOING_UP) {
-	  			keypadColState[keypadColIndex] = BT_UP;		// Update state to up
-	  		    msgContent.msgID = MSG_BT_UP;
-	  		    msgContent.msgContent = keypadColIndex;		// Let the main loop knows which key was pressed up
-	  			putItemInQueue(&IsrToMainQueue, &msgContent);	// post a message to the main loop that a valid button up was detected
-	  		} else {									// Invalid transition
-	  			keypadColState[keypadColIndex] = BT_IDLE;		// Reset button state to default
-	  		}
-	  } else {											// We read a low bit, so see which valid transition we can handle
-	  		if (keypadColState[keypadColIndex] == BT_GOING_DOWN) {
-	  			keypadColState[keypadColIndex] = BT_DOWN;
-	  			msgContent.msgID = MSG_BT_DOWN;
-	  													// Get the ascii code of the button pressed based on column index
-	  													// and extra scanning of rows
-	  		    msgContent.msgContent = getKeyPressed(keypadColIndex);
-	  		    										// post a message to the main loop that a valid button down was detected
-	  			putItemInQueue(&IsrToMainQueue, &msgContent);
+		  	  	  	  	  	  	  	  	  	  	  	// We read a high bit
+		keypadColState[keypadColIndex] = BT_UP;		// Update state to up
+		msgContent.msgID = MSG_BT_UP;
+		msgContent.msgContent = keypadColIndex;		// Let the main loop knows which key was pressed up
+		putItemInQueue(&IsrToMainQueue, &msgContent);	// post a message to the main loop that a valid button up was detected
+	  } else {										// We read a low bit, so see which valid transition we can handle
+		keypadColState[keypadColIndex] = BT_DOWN;
+		msgContent.msgID = MSG_BT_DOWN;
+												// Get the ascii code of the button pressed based on column index
+												// and extra scanning of rows
+		msgContent.msgContent = getKeyPressed(keypadColIndex);
+												// post a message to the main loop that a valid button down was detected
+		putItemInQueue(&IsrToMainQueue, &msgContent);
 
-	  			Config_Keypad(ROW_OUT_COL_IN);			// Configure column pins as input that generate interrupts and
-	  													// row as output
-
-	  		} else {									// Invalid transition
-	  													// Reset button state to default
-	  			keypadColState[keypadColIndex] = BT_IDLE;
-	  		}
+		Config_Keypad(ROW_OUT_COL_IN);			// Configure column pins as input that generate interrupts and
+												// row as output
 	  	}
 	  EnableKeypadExti_IRQ();							// Enable interrupt again to parse a new key
   }

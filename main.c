@@ -34,37 +34,29 @@
  EXIT ISR:
 	- Store the exact pin that caused the interrupt.
 	- Mask interrupt, and clear pending interrupt flags.
-	- Read this Pin. 
-	- If Pin is Low and current button state is BT_IDLE, then this is a correct transition.
-	- Set the button state as BT_GOING_DOWN.
-	- If Pin is High and current button state is BT_DOWN, then this is a correct transition.
-	- Set the button state to GOING_UP.
-	- Otherwise, this is an invalid case, enable interrupts are return.
-	- For valid transition, store the pin that caused the interrupt.
-	- Trigger the debounce timer to generate an interrupt in 10 ms.
+	- Trigger the debounce timer to generate an interrupt in 20 ms.
 	- Return back.
 	
 TIMx ISR:
 	- This ISR is invoked when a debouncing time has expired.
-	- Read the GPIO that caused the interrupt earlier
-	- If the current button state is BT_GOING_DOWN, and the GPIO is low:
-		- Change the button state to BT_DOWN.
+	- Disable the debounce timer.
+	- Read the GPIO that caused the interrupt earlier.
+	- If the GPIO is High:
+		- Change the button state to BT_UP.
+		- Generate a msg BT_UP with value the column index of the key processed
+	- Else
 		- Perform row scan to find out the row index corresponding to the button pressed.
 		- Based on the col and row index, find out the ascii code of the button pressed.
 		- Generate a msg BT_DOWN with value the ascii code of the pressed button to be processing in the main loop.
 		- Reconfigure the GPIOs for detecting a button up through the ISR (Row out, Col in) and later on for a new keypad parsing.
-		
-	- If the current button state is BT_GOING_UP, and the GPIO is high:
-		- Change the button state to BT_UP.
-		- Post a msg BT_UP to the main loop with no value. 
-	
-	- Otherwise, this is an invalid case, change the button state to BT_IDLE
+
 	- Enable the buttons interrupt again.
 	- Return
 	
 Main Loop:
-	- Upon receiving a button down message, do whatever was planned to do 
-	- Upon receiving a button up message, the msg content has the key index. Change the button state to idle.
+	- Upon receiving a button down message, do whatever was planned to do. For debug purpose, turn on LED
+	- Upon receiving a button up message, the msg content has the key index. Change the button state to idle. For debug purpose, turn
+	LED off
 	
 Unhandled cases:
 	- What will happen in the user presses one key down, and while down, he presses a second key down, then release both in any order?
@@ -82,11 +74,14 @@ Unhandled cases:
 /* Private functions */
 void HSI_RCC_Configuration(void);
 void Config_NVIC(void);
+uint8_t	checkPassword(uint8_t keyPressed);
+
+uint8_t	passwordIndex=0;
+uint8_t password[4];
 
 int main(void) {
 
-	uint8_t rc, i=0;
-	uint8_t test[10];
+	uint8_t rc;
 
 	msgQueueDef readValue;
 
@@ -102,9 +97,12 @@ int main(void) {
 
 	GPIO_SetAllAnalogInput();			// change all IOs into Analog INP to save power
 
+	GPIO_ConfigDiscoveryLEDs();			// Debug using Discovery 2 LEDs
 
 	Config_Keypad(ROW_OUT_COL_IN);		// initially configure colum pins as input that generate interrupts and row as output
 
+										// Go to STOP mode to save power and wait for a key to be pressed to enter the main loop
+	PWR_EnterSTOPMode(PWR_Regulator_LowPower, PWR_STOPEntry_WFI);
 
 	while (1)  {						// Infinite loop
 
@@ -114,23 +112,25 @@ int main(void) {
 			switch (readValue.msgID) {
 				case MSG_BT_DOWN:						// A button down was detected, and the msg content holds the
 														// ascii code of the key pressed
-					test[i] = readValue.msgContent;
-					if (i == 9) {
-						i=0;							// Put a break point here and watch the test array for the last
-					} else {							// 10 keys typed by the user
-						i++;
+					GPIO_SetBits(LED_PORT, LED_BLUE_PIN);
+														// Test if the content = 1234 as a test password
+					if (checkPassword(readValue.msgContent)) {
+						LED_PORT->ODR ^= LED_GREEN_PIN;	// Toggle Green LED
 					}
 					break;
 
 				case MSG_BT_UP:							// Rest specific button status to idle
+					GPIO_ResetBits(LED_PORT, LED_BLUE_PIN);
 					keypadColState[readValue.msgContent] = BT_IDLE;
+														// key full processed, then go to STOP mode to save power
+					PWR_EnterSTOPMode(PWR_Regulator_LowPower, PWR_STOPEntry_WFI);
 					break;
 
-				default:								// Anything else put CPU to sleep
-					__WFI();
+				default:
+
 					break;
 			}
-		}
+    	}
 	}
 }
 
@@ -171,4 +171,51 @@ void HSI_RCC_Configuration(void)
 
   /* Enable PWR mngt */
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
+}
+
+
+/*
+ * This function checks the pressed used button. If it matches the right sequence, it returns TRUE, else reset, and return FALSE
+ */
+uint8_t	checkPassword(uint8_t keyPressed) {
+
+	switch (passwordIndex) {
+		case 0:
+			if (keyPressed == '1') {
+				passwordIndex++;
+			} else {
+				passwordIndex = 0;
+			}
+			break;
+		case 1:
+			if (keyPressed == '2') {
+				passwordIndex++;
+			} else {
+				passwordIndex = 0;
+			}
+
+			break;
+		case 2:
+			if (keyPressed == '3') {
+				passwordIndex++;
+			} else {
+				passwordIndex = 0;
+			}
+
+			break;
+		case 3:
+			if (keyPressed == '4') {
+				passwordIndex = 0;
+				return 1;
+			} else {
+				passwordIndex = 0;
+			}
+
+			break;
+
+		default:
+			break;
+	}
+	return 0;
+
 }
